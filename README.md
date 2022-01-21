@@ -20,7 +20,9 @@ var scClient = new StashCatApiClient(_logger, configuration);
 await scClient.LoginAsync(username, password);
 await scClient.GetPrivateKeyAsync();
 await scClient.GetConversationsAsync();
+// scClient.Conversations now contains conversation info
 await scClient.GetChannelsAsync();
+// scClient.Channels now contains channel info
 ```
 
 It's been tested on a .NET 6 (isolated) Azure Function. Provide a cache instance to prevent an in-app notification every time you call `LoginAsync`. Any `IDistributableCache` implementation will do, e.g. <https://www.nuget.org/packages/DistributedCache.AzureTableStorage>. The login reponse will be stored there including the client key that is needed to call endpoints. Protect this cache from third parties as it contains secrets.
