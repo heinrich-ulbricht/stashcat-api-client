@@ -10,6 +10,21 @@ I used this API client to build my own notification system via Signal using <htt
 
 And if somebody from StashCat sees this: please support notifications on de-Googled phones. Signal, Threema, Teams - they all support it.
 
+## How to use
+
+Using it goes along those lines:
+
+```csharp
+var scClient = new StashCatApiClient(_logger, configuration);
+// scClient.Cache = ... something IDistributableCache
+await scClient.LoginAsync(username, password);
+await scClient.GetPrivateKeyAsync();
+await scClient.GetConversationsAsync();
+await scClient.GetChannelsAsync();
+```
+
+It's been tested on a .NET 6 (isolated) Azure Function. Provide a cache instance to prevent an in-app notification every time you call `LoginAsync`. Any `IDistributableCache` implementation will do, e.g. <https://www.nuget.org/packages/DistributedCache.AzureTableStorage>. The login reponse will be stored there including the client key that is needed to call endpoints. Protect this cache from third parties as it contains secrets.
+
 ## Disclaimer
 
 "StashCat" belongs to [stashcat GmbH](https://stashcat.com/en/legal-notice/), I am in no way affiliated to them and they have nothing to do with this repo.
