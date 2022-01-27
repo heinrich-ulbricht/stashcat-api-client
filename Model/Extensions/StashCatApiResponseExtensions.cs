@@ -1,7 +1,5 @@
 namespace StashCat.Model;
-#nullable enable
 
-using System;
 using StashCat.Api;
 
 public partial class StashCatTopLevelResponse

@@ -1,5 +1,4 @@
 namespace StashCat.Tools;
-#nullable enable
 
 using StashCat.Model;
 using Newtonsoft.Json;

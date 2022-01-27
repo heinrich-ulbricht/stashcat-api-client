@@ -1,5 +1,4 @@
 namespace StashCat.Tools;
-#nullable enable
 
 using Microsoft.Extensions.Caching.Distributed;
 

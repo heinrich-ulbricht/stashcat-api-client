@@ -1,8 +1,8 @@
 ﻿namespace StashCat.Api;
-#nullable enable
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -19,11 +19,11 @@ using StashCat.Tools;
 public class StashCatApiClient
 {
     public string StashCatVersion { get; set; } = "4.13.0";
-    public string DeviceId { get; set; } = "stashcatiskindofbrokenrandomstr1";
     private string? ClientKey { get; set; }
     private string? UserId { get; set; }
     private string? PrivateEncryptedKey { get; set; }
     private string? PublicKey { get; set; }
+    public string? SocketId { get; private set; }
     private RSACryptoServiceProvider? Cipher { get; set; }
     public Company? Company { get; private set; }
     public List<Conversation> Conversations { get; private set; } = new List<Conversation>();
@@ -83,9 +83,9 @@ public class StashCatApiClient
 
     // note: every login will generate an event in other clients; thus you are strongly advised to assign a Cache instance to save the API result for reuse on future logins
     // note: when running on Azure DistributedCache.AzureTableStorage works well as cache implementation with Azure Table Storage backend
-    public async Task LoginAsync(string username, string password)
+    public async Task LoginAsync()
     {
-        _logger.LogDebug("Entering {Function}, logging in as {Username}", nameof(LoginAsync), username);
+        _logger.LogDebug("Entering {Function}, logging in as {Username}", nameof(LoginAsync), _configuration.StashCatUsername);
 
         string? apiResultString;
         var apiResultStringCacheKey = $"{_configuration.StashCatUsername}-auth-login-result";
@@ -103,9 +103,9 @@ public class StashCatApiClient
         {
             _logger.LogDebug("Found no cached login data, getting from API");
             var payloadFormData = new Dictionary<string, string>();
-            payloadFormData.Add("email", username);
-            payloadFormData.Add("password", password);
-            payloadFormData.Add("device_id", DeviceId);
+            payloadFormData.Add("email", _configuration.StashCatUsername);
+            payloadFormData.Add("password", _configuration.StashCatPassword);
+            payloadFormData.Add("device_id", _configuration.UniqueDeviceId);
             payloadFormData.Add("app_name", AppName);
             payloadFormData.Add("encrypted", "true");
             payloadFormData.Add("callable", "true");
@@ -124,6 +124,7 @@ public class StashCatApiClient
 
         ClientKey = apiResponse?.Payload?.ClientKey;
         UserId = apiResponse?.Payload?.Userinfo?.Id;
+        SocketId = apiResponse?.Payload?.Userinfo?.SocketId;
 
         _logger.LogDebug("Leaving {Function}", nameof(LoginAsync));
     }
@@ -153,7 +154,7 @@ public class StashCatApiClient
             _logger.LogDebug("Found no cached private key, getting from API");
             var payloadFormData = new Dictionary<string, string>();
             payloadFormData.Add("client_key", ClientKey);
-            payloadFormData.Add("device_id", DeviceId);
+            payloadFormData.Add("device_id", _configuration.UniqueDeviceId);
             HttpContent payload = new FormUrlEncodedContent(payloadFormData);
 
             (_, apiResultString, apiResponse) = await _httpClient.PostWithGuaranteedSuccess($"{_configuration.StashCatBaseUrl}/security/get_private_key", payload);
@@ -191,7 +192,7 @@ public class StashCatApiClient
         }
         var payloadFormData = new Dictionary<string, string>();
         payloadFormData.Add("client_key", ClientKey);
-        payloadFormData.Add("device_id", DeviceId);
+        payloadFormData.Add("device_id", _configuration.UniqueDeviceId);
         payloadFormData.Add("limit", "30");
         payloadFormData.Add("offset", "0");
         payloadFormData.Add("archive", "0");
@@ -214,7 +215,7 @@ public class StashCatApiClient
         }
         var payloadFormData = new Dictionary<string, string>();
         payloadFormData.Add("client_key", ClientKey);
-        payloadFormData.Add("device_id", DeviceId);
+        payloadFormData.Add("device_id", _configuration.UniqueDeviceId);
         payloadFormData.Add("no_cache", "true");
         var payload = new FormUrlEncodedContent(payloadFormData);
 
@@ -242,7 +243,7 @@ public class StashCatApiClient
         }
         var payloadFormData = new Dictionary<string, string>();
         payloadFormData.Add("client_key", ClientKey);
-        payloadFormData.Add("device_id", DeviceId);
+        payloadFormData.Add("device_id", _configuration.UniqueDeviceId);
         payloadFormData.Add("company", Company.Id);
         var payload = new FormUrlEncodedContent(payloadFormData);
 

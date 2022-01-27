@@ -1,5 +1,4 @@
 namespace StashCat.Api;
-#nullable enable
 
 public class StashCatApiException : Exception
 {
