@@ -16,13 +16,37 @@ Using it goes along those lines:
 
 ```csharp
 var scClient = new StashCatApiClient(_logger, configuration);
-// scClient.Cache = ... something IDistributableCache
-await scClient.LoginAsync(username, password);
+// note: any IDistributedCache implementation will do
+scClient.Cache = new SimpleFileCache(@"cache.txt");
+await scClient.LoginAsync();
 await scClient.GetPrivateKeyAsync();
 await scClient.GetConversationsAsync();
 // scClient.Conversations now contains conversation info
 await scClient.GetChannelsAsync();
 // scClient.Channels now contains channel info
+```
+
+You can register for push notifications as well:
+
+```csharp
+var pushClient = scClient.NotificationClient;
+await pushClient.ConnectAndAuthenticateAsync();
+pushClient.OnAny += async (sender, data) => {
+    var (eventName, json) = data;
+    Debug.WriteLine($"{DateTime.Now} Event={eventName} {json}"});
+};
+
+while (true)
+{
+    await Task.Delay(TimeSpan.FromMinutes(1));
+    var stillAuthenticated = await pushClient.GetAuthenticatedStatusAsync();
+    if (stillAuthenticated)
+    {
+        Debug.WriteLine("Still authenticated");
+    } else {
+        Debug.WriteLine("Not authenticated anymore");
+    }
+}
 ```
 
 It's been tested on a .NET 6 (isolated) Azure Function. Provide a cache instance to prevent an in-app notification every time you call `LoginAsync`. Any `IDistributableCache` implementation will do, e.g. <https://www.nuget.org/packages/DistributedCache.AzureTableStorage>. The login reponse will be stored there including the client key that is needed to call endpoints. Protect this cache from third parties as it contains secrets.

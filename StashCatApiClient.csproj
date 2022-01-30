@@ -9,7 +9,11 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="6.0.0" />
-    
+    <PackageReference Include="Nito.AsyncEx" Version="5.1.2" />
+    <PackageReference Include="SocketIOClient" Version="3.0.5" />
   </ItemGroup>
+  <!-- <ItemGroup>
+    <ProjectReference Include="..\socket.io-client-csharp\src\SocketIOClient\SocketIOClient.csproj" />
+  </ItemGroup>   -->
 
 </Project>

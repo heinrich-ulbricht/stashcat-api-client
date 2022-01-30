@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -14,6 +13,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using StashCat.Model;
+using StashCat.Notifications;
 using StashCat.Tools;
 
 public class StashCatApiClient
@@ -34,6 +34,7 @@ public class StashCatApiClient
     private readonly IConfiguration _configuration;
     private const long _loginCacheLifetimeDays = 30;
     private readonly HttpClient _httpClient = InitHttpClient();
+    public StashCatNotificationClient? NotificationClient { get; set; }
 
     public string AppName
     {
@@ -126,6 +127,16 @@ public class StashCatApiClient
         UserId = apiResponse?.Payload?.Userinfo?.Id;
         SocketId = apiResponse?.Payload?.Userinfo?.SocketId;
 
+        try
+        {
+            InitNotificationClient();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Exception while initializing the notification client. Ignoring, push notifications not available.");
+            NotificationClient = null;
+        }
+
         _logger.LogDebug("Leaving {Function}", nameof(LoginAsync));
     }
 
@@ -183,6 +194,66 @@ public class StashCatApiClient
         this.Cipher = cipher;
     }
 
+    // tested with channel message notification; conversation tbd
+    public async Task<string?> DecodeMessageAsync(string? message_hexEncoded, string? channelOrConversationId, string? iv_hexEncoded)
+    {
+        _logger.LogDebug("Trying to get channel or conversation with ID {Id}", channelOrConversationId);
+
+        if (string.IsNullOrWhiteSpace(message_hexEncoded) || string.IsNullOrEmpty(iv_hexEncoded) || string.IsNullOrEmpty(channelOrConversationId))
+        {
+            _logger.LogWarning("Cannot decode message if message, channel ID or IV are empty.");
+            return null;
+        }
+
+        if (null == Cipher)
+        {
+            throw new Exception($"Cipher is not initialized, call {nameof(UnlockPrivateKeyAsync)} first.");
+        }
+
+        _logger.LogDebug("Trying channel first...", channelOrConversationId);
+        var conversationKey_base64Encoded = Channels.SingleOrDefault(c => c.Id == channelOrConversationId)?.Key;
+        if (conversationKey_base64Encoded == null)
+        {
+            _logger.LogDebug("No luck, trying conversations...", channelOrConversationId);
+            conversationKey_base64Encoded = Conversations.SingleOrDefault(c => c.Id == channelOrConversationId)?.Key;
+            if (conversationKey_base64Encoded == null)
+            {
+                _logger.LogDebug("No luck, trying with updated channels again...", channelOrConversationId);
+                await GetChannelsAsync();
+                conversationKey_base64Encoded = Channels.SingleOrDefault(c => c.Id == channelOrConversationId)?.Key;
+                if (conversationKey_base64Encoded == null)
+                {
+                    _logger.LogDebug("No luck, trying with updated conversations again...", channelOrConversationId);
+                    await GetConversationsAsync();
+                    conversationKey_base64Encoded = Conversations.SingleOrDefault(c => c.Id == channelOrConversationId)?.Key;
+                }
+            }
+        }
+        if (null == conversationKey_base64Encoded)
+        {
+            throw new Exception($"Cannot find channel or conversation with ID {channelOrConversationId}");
+        }
+        _logger.LogDebug("Found conversation key, good");
+
+        var decodedConversationKey = Convert.FromBase64String(conversationKey_base64Encoded);
+        var decryptedConversationKey = Cipher.Decrypt(decodedConversationKey, true); // found no docs about the second parameter, but it worked
+
+        var cipheredData = Convert.FromHexString(message_hexEncoded);
+        using MemoryStream ms = new MemoryStream(cipheredData);
+        using Aes aes = Aes.Create();
+        aes.Padding = PaddingMode.PKCS7; // found no docs about this, but it worked
+        aes.Mode = CipherMode.CBC;
+        aes.Key = decryptedConversationKey;
+        aes.IV = Convert.FromHexString(iv_hexEncoded);
+
+        ICryptoTransform decipher = aes.CreateDecryptor(aes.Key, aes.IV);
+        using CryptoStream cs = new CryptoStream(ms, decipher, CryptoStreamMode.Read);
+        using StreamReader sr = new StreamReader(cs, Encoding.UTF8);
+
+        var decrypted = sr.ReadToEnd();
+        return decrypted;
+    }
+
     public async Task GetConversationsAsync()
     {
         _logger.LogDebug("Entering {Function}", nameof(GetConversationsAsync));
@@ -211,7 +282,7 @@ public class StashCatApiClient
         _logger.LogDebug("Entering {Function}", nameof(GetMyCompaniesAsync));
         if (string.IsNullOrEmpty(ClientKey))
         {
-            throw new Exception($"ClientKey needs to be initialized before calling {GetMyCompaniesAsync}");
+            throw new Exception($"ClientKey needs to be initialized before calling {nameof(GetMyCompaniesAsync)}");
         }
         var payloadFormData = new Dictionary<string, string>();
         payloadFormData.Add("client_key", ClientKey);
@@ -239,7 +310,7 @@ public class StashCatApiClient
         }
         if (string.IsNullOrEmpty(ClientKey))
         {
-            throw new Exception($"ClientKey needs to be initialized before calling {GetMyCompaniesAsync}");
+            throw new Exception($"ClientKey needs to be initialized before calling {nameof(GetMyCompaniesAsync)}");
         }
         var payloadFormData = new Dictionary<string, string>();
         payloadFormData.Add("client_key", ClientKey);
@@ -252,5 +323,23 @@ public class StashCatApiClient
         Channels = apiResponse?.Payload?.Channels ?? new List<Channel>();
 
         _logger.LogDebug("Leaving {Function}", nameof(GetChannelsAsync));
+    }
+
+    private void InitNotificationClient()
+    {
+        if (string.IsNullOrEmpty(ClientKey))
+        {
+            throw new Exception($"ClientKey needs to be initialized before calling {nameof(InitNotificationClient)}. Call {nameof(LoginAsync)} first.");
+        }
+        if (string.IsNullOrEmpty(SocketId))
+        {
+            throw new Exception($"SocketId needs to be initialized before calling {nameof(InitNotificationClient)}. Call {nameof(LoginAsync)} first.");
+        }
+
+        var notificationConfiguration = new StashCat.Notifications.Configuration(_configuration.UniqueDeviceId, ClientKey, SocketId)
+        {
+            // maybe in the future there is the need to configure the push endpoint; for now the default works (for my use case at least...)
+        };
+        NotificationClient = new StashCatNotificationClient(_logger, notificationConfiguration);
     }
 }
